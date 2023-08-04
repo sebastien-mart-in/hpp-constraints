@@ -230,6 +230,13 @@ void BySubstitution::computeActiveRowsOfJ(std::size_t iStack) {
 void BySubstitution::projectVectorOnKernel(ConfigurationIn_t arg,
                                            vectorIn_t darg,
                                            vectorOut_t result) const {
+  projectVectorOnKernel(arg, 1, darg, result);
+}
+
+void BySubstitution::projectVectorOnKernel(ConfigurationIn_t arg,
+                                           value_type time,
+                                           vectorIn_t darg,
+                                           vectorOut_t result) const {
   if (constraints_.empty() || reducedDimension() == 0) {
     result = darg;
     return;
@@ -237,16 +244,21 @@ void BySubstitution::projectVectorOnKernel(ConfigurationIn_t arg,
   computeValue<true>(arg);
   updateJacobian(arg);
   getReducedJacobian(reducedJ_);
-
+  DifferentiableFunctionPtr_t rhsf = (*(constraints_[0])).rightHandSideFunction();
+  matrix_t d_rhsf(reducedJ_.rows(),1);
+  vector_t time_ (1);
+  time_ << time;
+  rhsf->jacobian(d_rhsf, time_);
+  
   svd_.compute(reducedJ_);
 
   // TODO the output of explicit solver should be set to zero ?
   dqSmall_ = freeVariables_.rview(darg);
-
+ 
   size_type rank = svd_.rank();
   vector_t tmp(getV1(svd_, rank).adjoint() * dqSmall_);
-  dqSmall_.noalias() -= getV1(svd_, rank) * tmp;
-
+  dqSmall_.noalias() +=  reducedJ_.adjoint() * d_rhsf - getV1(svd_, rank) * tmp;
+ 
   // Otherwise two uninitialized values may sum up to NaN
   result.setZero();
   freeVariables_.lview(result) = dqSmall_;
